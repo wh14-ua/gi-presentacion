@@ -84,6 +84,33 @@ header.top .sub{color:var(--ink2);font-size:.95rem;margin-top:6px;max-width:46ch
 .flash .back .txt{font-size:.94rem;color:var(--ink);overflow:auto}
 .flash .back .mine{margin-top:auto;font-size:.72rem;color:var(--ink2);font-style:italic;padding-top:8px}
 
+/* slide card (móvil-first): imagen + Ver guion + acordeón */
+.slidecard{background:var(--paper2);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.slidewrap{position:relative;cursor:zoom-in;line-height:0}
+.slideimg{display:block;width:100%;height:auto}
+.zoomhint{position:absolute;bottom:8px;right:8px;background:#211c16cc;color:#fff;font-size:.7rem;padding:4px 9px;border-radius:999px;line-height:1.2}
+.guion-toggle{width:100%;border-radius:0;border:0;border-top:1px solid var(--line);background:#fff8;justify-content:center;padding:13px;font-size:.95rem}
+.guion-toggle.on{background:var(--paper)}
+.guion-panel{padding:14px 16px;border-top:1px solid var(--line)}
+.guion-panel .lbl{font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.guion-panel h3{font-family:"Fraunces",serif;font-size:1.05rem;margin:4px 0 8px}
+.guion-panel .txt{font-size:1rem;line-height:1.6;color:var(--ink)}
+.guion-panel .mine{margin-top:10px;font-size:.74rem;color:var(--ink2);font-style:italic}
+
+/* lightbox para ampliar la diapo */
+.zoom-ov{position:fixed;inset:0;z-index:70;background:#120d08ee;display:flex;align-items:center;justify-content:center;padding:10px;overflow:auto;cursor:zoom-out}
+.zoom-ov img{max-width:100%;width:1200px;height:auto;border-radius:8px;box-shadow:0 20px 60px -20px #000}
+.zoom-close{position:fixed;top:14px;right:16px;color:#fff;background:#0006;border:1px solid #fff4;padding:6px 12px;border-radius:999px;font-size:.85rem}
+
+/* audio */
+.audio-wrap{margin:2px 0 10px}
+.audio-wrap audio{width:100%;height:42px;display:block}
+.btn-rec{background:linear-gradient(180deg,#cf4a36,#a8331f);color:#fff;box-shadow:var(--shadow);font-weight:700;width:100%;justify-content:center;padding:13px 16px;border-radius:12px;font-size:.95rem}
+.btn-rec .recdot{background:#fff}
+.slot .choose{margin:2px 0 10px}
+.slot .ops{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.slot .ops .btn-sm{flex:1 1 auto;justify-content:center;min-width:120px;padding:11px 12px}
+
 /* audio */
 .audio-slots{display:grid;grid-template-columns:1fr;gap:12px}
 @media(min-width:620px){.audio-slots{grid-template-columns:1fr 1fr}}
@@ -167,7 +194,6 @@ const app = () => document.getElementById('app');
 const SUPA_URL = "https://rgijibdabaoqkthspsoq.supabase.co";   // ej.: https://abcdxyz.supabase.co
 const SUPA_KEY = "sb_publishable_uB0I4QKXV0hwJhqdV3HLVQ_4t4yzFfH";       // Publishable key (sb_publishable_...) del MISMO proyecto. Settings -> API Keys.
 /* ========================================================================================= */
-
 
 function sbReady(){ return /^https:\/\/[^ ]+\.supabase\.co/.test(SUPA_URL) && SUPA_KEY.length > 20 && SUPA_KEY.indexOf("PEGA_AQUI") === -1; }
 function sbHeaders(extra){ return Object.assign({ apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY }, extra || {}); }
@@ -374,23 +400,24 @@ function renderHome(){
 
 function audioSlotHTML(pid, slot){
   const a = state.audios[pid][String(slot)];
-  const recording = (function(){ const r = recState[pid + "-" + slot]; return r && r.rec && r.rec.state === "recording"; })();
-  const stopBtn = '<button class="btn btn-ghost btn-sm" onclick="toggleRecord(\'' + pid + '\',' + slot + ')"><span class="recdot"></span> Parar</button>';
+  const key = pid + "-" + slot;
+  const recording = (function(){ const r = recState[key]; return r && r.rec && r.rec.state === "recording"; })();
+  const stopBtn = '<button class="btn btn-rec" onclick="toggleRecord(\'' + pid + '\',' + slot + ')"><span class="recdot"></span> Grabando <span id="rectime-' + key + '">0:00</span> · Parar</button>';
   let body;
-  if(a){
-    body = '<audio controls preload="none" src="' + a.url + '"></audio>'
-      + '<div class="ops"><label class="choose"><input type="radio" name="pres-' + pid + '" ' + (a.es?'checked':'') + ' onclick="choosePres(\'' + pid + '\',' + slot + ')"> usar en presentación</label></div>'
+  if(recording){
+    body = '<div class="ops">' + stopBtn + '</div>';
+  }else if(a){
+    body = '<div class="audio-wrap"><audio controls preload="metadata" src="' + a.url + '"></audio></div>'
+      + '<label class="choose"><input type="radio" name="pres-' + pid + '" ' + (a.es?'checked':'') + ' onclick="choosePres(\'' + pid + '\',' + slot + ')"> usar en presentación</label>'
       + '<div class="ops">'
-      +   (recording ? stopBtn :
-            '<button class="btn btn-ghost btn-sm" onclick="triggerUpload(\'' + pid + '\',' + slot + ')">↻ Reemplazar</button>'
-          + '<button class="btn btn-ghost btn-sm" onclick="toggleRecord(\'' + pid + '\',' + slot + ')">● Regrabar</button>')
+      +   '<button class="btn btn-ghost btn-sm" onclick="triggerUpload(\'' + pid + '\',' + slot + ')">↻ Reemplazar</button>'
+      +   '<button class="btn btn-ghost btn-sm" onclick="toggleRecord(\'' + pid + '\',' + slot + ')">● Regrabar</button>'
       +   '<button class="btn btn-ghost btn-sm" style="color:var(--bad);border-color:#eccac4" onclick="deleteAudio(\'' + pid + '\',' + slot + ')">🗑 Eliminar</button>'
       + '</div>';
   }else{
     body = '<div class="ops">'
-      +   (recording ? stopBtn :
-            '<button class="btn btn-primary btn-sm" onclick="triggerUpload(\'' + pid + '\',' + slot + ')">⬆ Subir audio</button>'
-          + '<button class="btn btn-ghost btn-sm" onclick="toggleRecord(\'' + pid + '\',' + slot + ')">● Grabar</button>')
+      +   '<button class="btn btn-primary btn-sm" onclick="triggerUpload(\'' + pid + '\',' + slot + ')">⬆ Subir audio</button>'
+      +   '<button class="btn btn-ghost btn-sm" onclick="toggleRecord(\'' + pid + '\',' + slot + ')">● Grabar</button>'
       + '</div>';
   }
   return '<div class="slot ' + (a?'':'empty') + '"><div class="sh"><b>Audio ' + slot + '</b>'
@@ -403,12 +430,13 @@ function renderPersona(){
   const flashes = p.slides.map(s => {
     const g = (guiones[p.id] || []).find(x => x.slide === s) || { titulo:'', texto:'' };
     return ''
-      + '<div class="flash" onclick="this.classList.toggle(\'flipped\')">'
-      +   '<div class="inner">'
-      +     '<div class="face"><img src="' + slides[String(s)] + '" alt="Diapo ' + s + '"><span class="hint">↺ ver guion</span></div>'
-      +     '<div class="face back"><div class="lbl">Diapo ' + s + ' · guion</div><h3>' + esc(g.titulo) + '</h3>'
-      +       '<div class="txt">' + esc(g.texto) + '</div>'
-      +       '<div class="mine">Guion sugerido (mío, pedagógico). Ajústalo a tus palabras; lo oficial es la diapo. <span class="hint" style="position:static;background:none;color:var(--accent)">↺ volver</span></div></div>'
+      + '<div class="slidecard">'
+      +   '<div class="slidewrap" onclick="openZoom(' + s + ')"><img class="slideimg" src="' + slides[String(s)] + '" alt="Diapo ' + s + '"><span class="zoomhint">🔍 toca para ampliar</span></div>'
+      +   '<button class="btn btn-ghost guion-toggle" onclick="toggleGuion(this)">📖 Ver guion</button>'
+      +   '<div class="guion-panel" hidden>'
+      +     '<div class="lbl">Diapo ' + s + ' · guion</div><h3>' + esc(g.titulo) + '</h3>'
+      +     '<div class="txt">' + esc(g.texto) + '</div>'
+      +     '<div class="mine">Guion sugerido (mío, pedagógico). Ajústalo a tus palabras; lo oficial es la diapo.</div>'
       +   '</div>'
       + '</div>';
   }).join('');
@@ -422,7 +450,7 @@ function renderPersona(){
     +    '<h2 style="font-size:1.25rem">' + esc(p.nombre) + '</h2>'
     +    '<span class="tag">' + esc(p.rol) + '</span></div>'
 
-    +  '<div class="section-title">Tus diapositivas <span class="badge">toca para ver el guion</span></div>'
+    +  '<div class="section-title">Tus diapositivas <span class="badge">guion bajo cada diapo</span></div>'
     +  '<div class="cards-row ' + (p.slides.length > 1 ? 'two' : '') + '">' + flashes + '</div>'
 
     +  '<div class="section-title">Tus audios <span class="badge" style="' + badgeStyle(ac, REQ_A) + '">' + ac + ' / ' + REQ_A + (ac>=REQ_A?' ✓':' — faltan') + '</span></div>'
@@ -507,6 +535,7 @@ function triggerUpload(pid, slot){
   };
   document.body.appendChild(inp); inp.click(); setTimeout(()=>inp.remove(), 60000);
 }
+function fmtClock(s){ const m = Math.floor(s/60), ss = s%60; return m + ":" + (ss<10?"0":"") + ss; }
 async function toggleRecord(pid, slot){
   const key = pid + "-" + slot;
   if(recState[key] && recState[key].rec && recState[key].rec.state === "recording"){ recState[key].rec.stop(); return; }
@@ -519,6 +548,7 @@ async function toggleRecord(pid, slot){
     rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
     rec.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
+      if(recState[key] && recState[key].timer) clearInterval(recState[key].timer);
       const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
       recState[key] = null;
       toast("Subiendo grabación…");
@@ -526,9 +556,26 @@ async function toggleRecord(pid, slot){
       if(ok) toast("Audio publicado ✓");
       if(state.view==="persona") renderPersona();
     };
-    recState[key] = { rec:rec }; rec.start();
+    const t0 = Date.now();
+    recState[key] = { rec:rec, t0:t0, timer:setInterval(() => {
+      const el = document.getElementById("rectime-" + key);
+      if(el) el.textContent = fmtClock(Math.floor((Date.now()-t0)/1000));
+    }, 500) };
+    rec.start();
     if(state.view==="persona") renderPersona();
   }catch(e){ toast("No se pudo acceder al micrófono; usa “Subir audio”."); }
+}
+function toggleGuion(btn){
+  const panel = btn.nextElementSibling;
+  if(!panel) return;
+  if(panel.hasAttribute('hidden')){ panel.removeAttribute('hidden'); btn.innerHTML = '📖 Ocultar guion'; btn.classList.add('on'); }
+  else { panel.setAttribute('hidden',''); btn.innerHTML = '📖 Ver guion'; btn.classList.remove('on'); }
+}
+function openZoom(n){
+  const ov = document.createElement('div'); ov.className = 'zoom-ov'; ov.id = 'zoomov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = '<img src="' + slides[String(n)] + '" alt="Diapo ' + n + '"><span class="zoom-close">✕ cerrar</span>';
+  document.body.appendChild(ov);
 }
 async function choosePres(pid, slot){ await setPresentation(pid, slot); if(state.view==="persona") renderPersona(); }
 async function deleteAudio(pid, slot){
