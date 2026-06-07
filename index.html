@@ -104,7 +104,14 @@ header.top .sub{color:var(--ink2);font-size:.95rem;margin-top:6px;max-width:46ch
 
 /* audio */
 .audio-wrap{margin:2px 0 10px}
-.audio-wrap audio{width:100%;height:42px;display:block}
+.player{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin:2px 0 12px}
+.player audio{display:none}
+.pbtn{flex:0 0 auto;width:46px;height:46px;border-radius:50%;border:0;background:linear-gradient(180deg,var(--accent),var(--accent2));color:#fff;font-size:1.15rem;cursor:pointer;display:grid;place-items:center;box-shadow:var(--shadow)}
+.pbtn:active{transform:scale(.96)}
+.pbar{flex:1 1 auto;height:12px;background:var(--line);border-radius:999px;position:relative;cursor:pointer}
+.pbar > i{position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:999px}
+.ptime{flex:0 0 auto;font-size:.8rem;color:var(--ink2);font-variant-numeric:tabular-nums;min-width:36px;text-align:center}
+.gp-edit{width:100%;min-height:170px;font-family:inherit;font-size:1rem;line-height:1.55;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px;resize:vertical}
 .btn-rec{background:linear-gradient(180deg,#cf4a36,#a8331f);color:#fff;box-shadow:var(--shadow);font-weight:700;width:100%;justify-content:center;padding:13px 16px;border-radius:12px;font-size:.95rem}
 .btn-rec .recdot{background:#fff}
 .slot .choose{margin:2px 0 10px}
@@ -200,7 +207,7 @@ function sbHeaders(extra){ return Object.assign({ apikey: SUPA_KEY, Authorizatio
 function pubUrl(path){ return SUPA_URL + "/storage/v1/object/public/" + BUCKET + "/" + path; }
 
 /* ---- state ---- */
-let state = { view:"home", personId:null, counts:{}, audios:{}, online:false, loaded:false };
+let state = { view:"home", personId:null, counts:{}, audios:{}, guionOverrides:{}, online:false, loaded:false };
 people.forEach(p => { state.counts[p.id] = 0; state.audios[p.id] = {}; });
 let testState = null, pres = null, recState = {};
 
@@ -227,16 +234,20 @@ function classifyError(status, text){
 async function loadRemote(){
   state.loaded = false; state.diag = null;
   if(!sbReady()){ state.online = false; state.loaded = true; return; }
-  let tr, au;
+  let tr, au, gu;
   try{
     tr = await fetch(SUPA_URL + "/rest/v1/fm_test_resultado?select=persona_id", { headers: sbHeaders() });
     au = await fetch(SUPA_URL + "/rest/v1/fm_audio?select=*", { headers: sbHeaders() });
+    gu = await fetch(SUPA_URL + "/rest/v1/fm_guion?select=*", { headers: sbHeaders() });
   }catch(e){ state.online = false; state.diag = { reason:"net" }; state.loaded = true; return; }
   people.forEach(p => { state.counts[p.id] = 0; state.audios[p.id] = {}; });
+  state.guionOverrides = {};
   const trj = tr.ok ? await tr.json() : null;
   const auj = au.ok ? await au.json() : null;
+  const guj = (gu && gu.ok) ? await gu.json() : null;
   if(Array.isArray(trj)) trj.forEach(r => { if(state.counts[r.persona_id] != null) state.counts[r.persona_id]++; });
   if(Array.isArray(auj)) auj.forEach(r => { if(state.audios[r.persona_id]) state.audios[r.persona_id][String(r.slot)] = { url:r.url, path:r.path, es:!!r.es_presentacion }; });
+  if(Array.isArray(guj)) guj.forEach(r => { (state.guionOverrides[r.persona_id] = state.guionOverrides[r.persona_id] || {})[r.slide] = r.texto; });
   state.online = tr.ok && au.ok && Array.isArray(auj);
   if(!state.online){
     const bad = !au.ok ? au : tr;
@@ -407,7 +418,13 @@ function audioSlotHTML(pid, slot){
   if(recording){
     body = '<div class="ops">' + stopBtn + '</div>';
   }else if(a){
-    body = '<div class="audio-wrap"><audio controls preload="metadata" src="' + a.url + '"></audio></div>'
+    body = '<div class="player">'
+      +   '<button class="pbtn" id="pbtn-' + key + '" onclick="playerToggle(\'' + key + '\')">▶</button>'
+      +   '<span class="ptime" id="cur-' + key + '">0:00</span>'
+      +   '<div class="pbar" onclick="playerSeek(event,\'' + key + '\')"><i id="bar-' + key + '"></i></div>'
+      +   '<span class="ptime" id="dur-' + key + '">0:00</span>'
+      +   '<audio id="aud-' + key + '" data-player="' + key + '" preload="metadata" src="' + a.url + '"></audio>'
+      + '</div>'
       + '<label class="choose"><input type="radio" name="pres-' + pid + '" ' + (a.es?'checked':'') + ' onclick="choosePres(\'' + pid + '\',' + slot + ')"> usar en presentación</label>'
       + '<div class="ops">'
       +   '<button class="btn btn-ghost btn-sm" onclick="triggerUpload(\'' + pid + '\',' + slot + ')">↻ Reemplazar</button>'
@@ -433,10 +450,9 @@ function renderPersona(){
       + '<div class="slidecard">'
       +   '<div class="slidewrap" onclick="openZoom(' + s + ')"><img class="slideimg" src="' + slides[String(s)] + '" alt="Diapo ' + s + '"><span class="zoomhint">🔍 toca para ampliar</span></div>'
       +   '<button class="btn btn-ghost guion-toggle" onclick="toggleGuion(this)">📖 Ver guion</button>'
-      +   '<div class="guion-panel" hidden>'
+      +   '<div class="guion-panel" id="gp-' + p.id + '-' + s + '" hidden>'
       +     '<div class="lbl">Diapo ' + s + ' · guion</div><h3>' + esc(g.titulo) + '</h3>'
-      +     '<div class="txt">' + esc(g.texto) + '</div>'
-      +     '<div class="mine">Guion sugerido (mío, pedagógico). Ajústalo a tus palabras; lo oficial es la diapo.</div>'
+      +     '<div class="gp-body">' + guionReadBody(p.id, s) + '</div>'
       +   '</div>'
       + '</div>';
   }).join('');
@@ -461,11 +477,17 @@ function renderPersona(){
     +  '<p class="muted" style="font-size:.86rem;margin:-4px 0 12px">' + (tests[p.id]||[]).length + ' preguntas, más duras que el speech: pensadas para los 5 min de preguntas del tribunal.</p>'
     +  '<button class="btn btn-primary" onclick="startTest(\'' + p.id + '\')">' + (tc>=REQ_T ? 'Repasar test (ya cumples)' : '▶ Hacer test (' + tc + '/' + REQ_T + ')') + '</button>'
     + '</div>';
+  wirePlayers();
 }
 
 /* ---- TEST ---- */
+function shuffleQ(q){
+  const idx = q.o.map((_, i) => i);
+  for(let i = idx.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp; }
+  return { q:q.q, o: idx.map(i => q.o[i]), c: idx.indexOf(q.c), e: q.e };
+}
 function startTest(pid){
-  testState = { pid:pid, qs:(tests[pid]||[]).slice(), idx:0, picked:null, score:0, finished:false };
+  testState = { pid:pid, qs:(tests[pid]||[]).map(shuffleQ), idx:0, picked:null, score:0, finished:false };
   state.view = "test"; state.personId = pid; render();
 }
 function answer(i){
@@ -576,6 +598,81 @@ function openZoom(n){
   ov.onclick = () => ov.remove();
   ov.innerHTML = '<img src="' + slides[String(n)] + '" alt="Diapo ' + n + '"><span class="zoom-close">✕ cerrar</span>';
   document.body.appendChild(ov);
+}
+
+/* ---- reproductor propio (controles visibles en cualquier móvil) ---- */
+function wirePlayers(){
+  document.querySelectorAll('audio[data-player]').forEach(au => {
+    const key = au.getAttribute('data-player');
+    const cur = document.getElementById('cur-' + key);
+    const dur = document.getElementById('dur-' + key);
+    const bar = document.getElementById('bar-' + key);
+    const setDur = () => { if(dur && isFinite(au.duration) && au.duration > 0) dur.textContent = fmtClock(Math.floor(au.duration)); };
+    au.onloadedmetadata = setDur; if(au.readyState >= 1) setDur();
+    au.ontimeupdate = () => {
+      if(cur) cur.textContent = fmtClock(Math.floor(au.currentTime || 0));
+      if(bar && au.duration && isFinite(au.duration)) bar.style.width = (au.currentTime / au.duration * 100) + '%';
+    };
+    au.onended = () => { const b = document.getElementById('pbtn-' + key); if(b) b.textContent = '▶'; if(bar) bar.style.width = '0%'; };
+  });
+}
+function playerToggle(key){
+  const au = document.getElementById('aud-' + key), b = document.getElementById('pbtn-' + key);
+  if(!au) return;
+  document.querySelectorAll('audio[data-player]').forEach(o => {
+    if(o !== au){ o.pause(); const ob = document.getElementById('pbtn-' + o.getAttribute('data-player')); if(ob) ob.textContent = '▶'; }
+  });
+  if(au.paused){ au.play().then(() => { if(b) b.textContent = '⏸'; }).catch(() => { toast("No se pudo reproducir el audio."); }); }
+  else { au.pause(); if(b) b.textContent = '▶'; }
+}
+function playerSeek(e, key){
+  const au = document.getElementById('aud-' + key);
+  if(!au || !au.duration || !isFinite(au.duration)) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const cx = (e.clientX != null) ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : rect.left);
+  au.currentTime = Math.max(0, Math.min(1, (cx - rect.left) / rect.width)) * au.duration;
+}
+
+/* ---- guion editable (compartido) ---- */
+function guionDefault(pid, slide){ const g = (guiones[pid]||[]).find(x => x.slide === slide); return g ? g.texto : ""; }
+function guionText(pid, slide){
+  const ov = (state.guionOverrides[pid] || {})[slide];
+  return (ov != null) ? ov : guionDefault(pid, slide);
+}
+function guionReadBody(pid, slide){
+  const edited = (state.guionOverrides[pid] || {})[slide] != null;
+  return '<div class="txt">' + esc(guionText(pid, slide)) + '</div>'
+    + '<div class="mine">' + (edited ? 'Editado por el grupo. ' : 'Guion sugerido (mío). ') + 'Lo oficial es la diapo.</div>'
+    + '<button class="btn btn-ghost btn-sm" onclick="editGuion(\'' + pid + '\',' + slide + ')">✏️ Editar guion</button>';
+}
+function editGuion(pid, slide){
+  const body = document.querySelector('#gp-' + pid + '-' + slide + ' .gp-body'); if(!body) return;
+  body.innerHTML = '<textarea class="gp-edit" id="ed-' + pid + '-' + slide + '"></textarea>'
+    + '<div class="ops" style="margin-top:8px">'
+    +   '<button class="btn btn-primary btn-sm" onclick="saveGuion(\'' + pid + '\',' + slide + ')">💾 Guardar</button>'
+    +   '<button class="btn btn-ghost btn-sm" onclick="cancelGuion(\'' + pid + '\',' + slide + ')">Cancelar</button>'
+    + '</div>';
+  const ta = document.getElementById('ed-' + pid + '-' + slide); if(ta){ ta.value = guionText(pid, slide); ta.focus(); }
+}
+function cancelGuion(pid, slide){
+  const body = document.querySelector('#gp-' + pid + '-' + slide + ' .gp-body'); if(body) body.innerHTML = guionReadBody(pid, slide);
+}
+async function saveGuion(pid, slide){
+  const ta = document.getElementById('ed-' + pid + '-' + slide); if(!ta) return;
+  const texto = ta.value;
+  state.guionOverrides[pid] = state.guionOverrides[pid] || {};
+  state.guionOverrides[pid][slide] = texto;
+  if(sbReady()){
+    try{
+      await fetch(SUPA_URL + "/rest/v1/fm_guion?on_conflict=persona_id,slide", {
+        method:"POST",
+        headers: sbHeaders({ "Content-Type":"application/json", "Prefer":"resolution=merge-duplicates,return=minimal" }),
+        body: JSON.stringify({ persona_id:pid, slide:slide, texto:texto })
+      });
+      toast("Guion guardado para el grupo ✓");
+    }catch(e){ toast("Guardado local; sin conexión para compartir."); }
+  }else{ toast("Guardado local (sin Supabase no se comparte)."); }
+  const body = document.querySelector('#gp-' + pid + '-' + slide + ' .gp-body'); if(body) body.innerHTML = guionReadBody(pid, slide);
 }
 async function choosePres(pid, slot){ await setPresentation(pid, slot); if(state.view==="persona") renderPersona(); }
 async function deleteAudio(pid, slot){
