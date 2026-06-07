@@ -60,6 +60,7 @@ header.top .sub{color:var(--ink2);font-size:.95rem;margin-top:6px;max-width:46ch
 .stats{display:flex;gap:8px;margin-top:auto}
 .stat{flex:1;border-radius:10px;padding:8px 10px;font-size:.8rem;font-weight:600;text-align:center;border:1px solid var(--line)}
 .stat.ok{background:var(--ok-bg);color:var(--ok);border-color:#bfe0cc}
+.stat.mid{background:#FBF0D8;color:#7A5A14;border-color:var(--gold)}
 .stat.bad{background:var(--bad-bg);color:var(--bad);border-color:#eccac4}
 .stat small{display:block;font-weight:500;opacity:.8;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em}
 
@@ -166,6 +167,7 @@ const app = () => document.getElementById('app');
 const SUPA_URL = "https://rgijibdabaoqkthspsoq.supabase.co";   // ej.: https://abcdxyz.supabase.co
 const SUPA_KEY = "sb_publishable_uB0I4QKXV0hwJhqdV3HLVQ_4t4yzFfH";       // Publishable key (sb_publishable_...) del MISMO proyecto. Settings -> API Keys.
 /* ========================================================================================= */
+
 
 function sbReady(){ return /^https:\/\/[^ ]+\.supabase\.co/.test(SUPA_URL) && SUPA_KEY.length > 20 && SUPA_KEY.indexOf("PEGA_AQUI") === -1; }
 function sbHeaders(extra){ return Object.assign({ apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY }, extra || {}); }
@@ -316,8 +318,11 @@ function render(){
 }
 
 function statBox(value, req, label){
-  const ok = value >= req;
-  return '<div class="stat ' + (ok?'ok':'bad') + '"><small>' + label + '</small>' + value + ' / ' + req + (ok?' ✓':'') + '</div>';
+  const cls = value >= req ? "ok" : (value > 0 ? "mid" : "bad");
+  return '<div class="stat ' + cls + '"><small>' + label + '</small>' + value + ' / ' + req + (value>=req?' ✓':'') + '</div>';
+}
+function badgeStyle(v, req){
+  return v >= req ? "" : (v > 0 ? "color:#7A5A14;border-color:var(--gold)" : "color:var(--bad);border-color:var(--bad)");
 }
 
 function renderHome(){
@@ -369,23 +374,24 @@ function renderHome(){
 
 function audioSlotHTML(pid, slot){
   const a = state.audios[pid][String(slot)];
-  const rec = recState[pid + "-" + slot];
-  const recording = rec && rec.rec && rec.rec.state === "recording";
+  const recording = (function(){ const r = recState[pid + "-" + slot]; return r && r.rec && r.rec.state === "recording"; })();
+  const stopBtn = '<button class="btn btn-ghost btn-sm" onclick="toggleRecord(\'' + pid + '\',' + slot + ')"><span class="recdot"></span> Parar</button>';
   let body;
   if(a){
     body = '<audio controls preload="none" src="' + a.url + '"></audio>'
+      + '<div class="ops"><label class="choose"><input type="radio" name="pres-' + pid + '" ' + (a.es?'checked':'') + ' onclick="choosePres(\'' + pid + '\',' + slot + ')"> usar en presentación</label></div>'
       + '<div class="ops">'
-      +   '<label class="choose"><input type="radio" name="pres-' + pid + '" ' + (a.es?'checked':'') + ' onclick="choosePres(\'' + pid + '\',' + slot + ')"> usar en presentación</label>'
-      +   '<button class="btn btn-ghost btn-sm" onclick="triggerUpload(\'' + pid + '\',' + slot + ')">↻ Reemplazar</button>'
+      +   (recording ? stopBtn :
+            '<button class="btn btn-ghost btn-sm" onclick="triggerUpload(\'' + pid + '\',' + slot + ')">↻ Reemplazar</button>'
+          + '<button class="btn btn-ghost btn-sm" onclick="toggleRecord(\'' + pid + '\',' + slot + ')">● Regrabar</button>')
+      +   '<button class="btn btn-ghost btn-sm" style="color:var(--bad);border-color:#eccac4" onclick="deleteAudio(\'' + pid + '\',' + slot + ')">🗑 Eliminar</button>'
       + '</div>';
   }else{
     body = '<div class="ops">'
-      +   '<button class="btn btn-primary btn-sm" onclick="triggerUpload(\'' + pid + '\',' + slot + ')">⬆ Subir audio</button>'
-      +   '<button class="btn btn-ghost btn-sm" onclick="toggleRecord(\'' + pid + '\',' + slot + ')">' + (recording ? '<span class="recdot"></span> Parar' : '● Grabar') + '</button>'
+      +   (recording ? stopBtn :
+            '<button class="btn btn-primary btn-sm" onclick="triggerUpload(\'' + pid + '\',' + slot + ')">⬆ Subir audio</button>'
+          + '<button class="btn btn-ghost btn-sm" onclick="toggleRecord(\'' + pid + '\',' + slot + ')">● Grabar</button>')
       + '</div>';
-  }
-  if(recording && a){
-    body = body.replace('↻ Reemplazar', '<span class="recdot"></span> Parar').replace('triggerUpload(\'' + pid + '\',' + slot + ')', 'toggleRecord(\'' + pid + '\',' + slot + ')');
   }
   return '<div class="slot ' + (a?'':'empty') + '"><div class="sh"><b>Audio ' + slot + '</b>'
     + (a && a.unsaved ? '<span class="pin" style="color:var(--bad)">⚠ subido, sin guardar</span>' : (a && a.es ? '<span class="pin">★ presentación</span>' : '')) + '</div>' + body + '</div>';
@@ -419,11 +425,11 @@ function renderPersona(){
     +  '<div class="section-title">Tus diapositivas <span class="badge">toca para ver el guion</span></div>'
     +  '<div class="cards-row ' + (p.slides.length > 1 ? 'two' : '') + '">' + flashes + '</div>'
 
-    +  '<div class="section-title">Tus audios <span class="badge ' + (ac>=REQ_A?'':'') + '" style="' + (ac>=REQ_A?'':'color:var(--bad);border-color:var(--bad)') + '">' + ac + ' / ' + REQ_A + (ac>=REQ_A?' ✓':' — faltan') + '</span></div>'
+    +  '<div class="section-title">Tus audios <span class="badge" style="' + badgeStyle(ac, REQ_A) + '">' + ac + ' / ' + REQ_A + (ac>=REQ_A?' ✓':' — faltan') + '</span></div>'
     +  '<p class="muted" style="font-size:.86rem;margin:-4px 0 12px">Lee tu parte en voz alta y sube (o graba) 2 tomas. Marca con ★ la que sonará en el modo presentación.</p>'
     +  '<div class="audio-slots">' + audioSlotHTML(p.id,1) + audioSlotHTML(p.id,2) + '</div>'
 
-    +  '<div class="section-title">Tu test <span class="badge" style="' + (tc>=REQ_T?'':'color:var(--bad);border-color:var(--bad)') + '">' + tc + ' / ' + REQ_T + (tc>=REQ_T?' ✓':'') + '</span></div>'
+    +  '<div class="section-title">Tu test <span class="badge" style="' + badgeStyle(tc, REQ_T) + '">' + tc + ' / ' + REQ_T + (tc>=REQ_T?' ✓':'') + '</span></div>'
     +  '<p class="muted" style="font-size:.86rem;margin:-4px 0 12px">' + (tests[p.id]||[]).length + ' preguntas, más duras que el speech: pensadas para los 5 min de preguntas del tribunal.</p>'
     +  '<button class="btn btn-primary" onclick="startTest(\'' + p.id + '\')">' + (tc>=REQ_T ? 'Repasar test (ya cumples)' : '▶ Hacer test (' + tc + '/' + REQ_T + ')') + '</button>'
     + '</div>';
@@ -525,6 +531,20 @@ async function toggleRecord(pid, slot){
   }catch(e){ toast("No se pudo acceder al micrófono; usa “Subir audio”."); }
 }
 async function choosePres(pid, slot){ await setPresentation(pid, slot); if(state.view==="persona") renderPersona(); }
+async function deleteAudio(pid, slot){
+  const a = state.audios[pid][String(slot)];
+  if(!a) return;
+  if(!confirm("¿Eliminar este audio? Podrás subir o grabar otro en su lugar.")) return;
+  if(sbReady()){
+    try{
+      await fetch(SUPA_URL + "/storage/v1/object/" + BUCKET + "/" + a.path, { method:"DELETE", headers: sbHeaders() });
+      await fetch(SUPA_URL + "/rest/v1/fm_audio?persona_id=eq." + pid + "&slot=eq." + slot, { method:"DELETE", headers: sbHeaders({ "Prefer":"return=minimal" }) });
+    }catch(e){}
+  }
+  delete state.audios[pid][String(slot)];
+  if(state.view === "persona") renderPersona();
+  toast("Audio eliminado.");
+}
 
 /* ---- presentation ---- */
 function startPresentation(){
@@ -688,24 +708,61 @@ function openDiag(rows, verdict){
   document.body.appendChild(bg);
 }
 
-/* ---- guion completo (PDF embebido, vista inline) ---- */
-function b64ToBlob(b64, type){
+/* ---- guion completo (PDF embebido, render inline con PDF.js, sin descarga) ---- */
+function b64ToBytes(b64){
   const bin = atob(b64); const arr = new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
-  return new Blob([arr], { type: type });
+  return arr;
 }
-function openGuion(){
+let _pdfjs = null;
+function loadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(_pdfjs) return _pdfjs;
+  _pdfjs = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload = () => { try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(e){} res(window.pdfjsLib); };
+    s.onerror = () => rej(new Error("pdfjs no disponible"));
+    document.head.appendChild(s);
+  });
+  return _pdfjs;
+}
+async function openGuion(){
   if(!DATA.guionPdf){ toast("Guion no disponible en este archivo."); return; }
-  if(!state.guionUrl){ state.guionUrl = URL.createObjectURL(b64ToBlob(DATA.guionPdf, 'application/pdf')); }
   const bg = document.createElement('div'); bg.className = 'modal-bg'; bg.id = 'guionbg';
   bg.onclick = e => { if(e.target === bg) closeGuion(); };
   bg.innerHTML = '<div class="modal" style="max-width:920px;width:96%;height:90vh;padding:0;display:flex;flex-direction:column;overflow:hidden">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);flex:0 0 auto">'
     +   '<b style="font-family:Fraunces,serif;font-size:1.05rem">📄 Guion completo · 10 min</b>'
     +   '<button class="btn btn-ghost btn-sm" onclick="closeGuion()">✕ Cerrar</button></div>'
-    + '<iframe title="Guion FestiveMetrics" src="' + state.guionUrl + '#toolbar=0&navpanes=0&view=FitH" '
-    +   'style="flex:1 1 auto;width:100%;border:0;background:#fff"></iframe></div>';
+    + '<div id="guionpages" style="flex:1 1 auto;overflow:auto;background:#E8E0D1;padding:14px;display:flex;flex-direction:column;align-items:center;gap:14px">'
+    +   '<p class="muted">Cargando guion…</p></div></div>';
   document.body.appendChild(bg);
+  const cont = document.getElementById('guionpages');
+  try{
+    const lib = await loadPdfJs();
+    const pdf = await lib.getDocument({ data: b64ToBytes(DATA.guionPdf) }).promise;
+    if(!document.getElementById('guionbg')) return; // cerrado mientras cargaba
+    cont.innerHTML = "";
+    const dpr = window.devicePixelRatio || 1;
+    const targetW = Math.min(840, cont.clientWidth - 8);
+    for(let n=1; n<=pdf.numPages; n++){
+      const page = await pdf.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const scale = targetW / base.width;
+      const vp = page.getViewport({ scale: scale * dpr });
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width; canvas.height = vp.height;
+      canvas.style.width = (vp.width / dpr) + "px"; canvas.style.height = "auto";
+      canvas.style.borderRadius = "8px"; canvas.style.boxShadow = "0 8px 24px -12px #0007";
+      cont.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    }
+  }catch(e){
+    // fallback: visor del navegador (por si no hay internet para PDF.js)
+    if(!state.guionUrl){ try{ state.guionUrl = URL.createObjectURL(new Blob([b64ToBytes(DATA.guionPdf)], { type:'application/pdf' })); }catch(_){} }
+    if(cont) cont.innerHTML = '<iframe title="Guion" src="' + (state.guionUrl||'') + '#toolbar=0" style="width:100%;height:100%;border:0;background:#fff"></iframe>';
+  }
 }
 function closeGuion(){ const m = document.getElementById('guionbg'); if(m) m.remove(); }
 
